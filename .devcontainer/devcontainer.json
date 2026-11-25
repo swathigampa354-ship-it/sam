@@ -7,6 +7,7 @@
     }
   },
   "postCreateCommand": "bash setup.sh",
+  "postStartCommand": "pgrep -f 'opencode web' >/dev/null || (nohup ./start.sh web </dev/null >/tmp/sam-web.log 2>&1 &)",
   "forwardPorts": [3000],
   "portsAttributes": {
     "3000": {
