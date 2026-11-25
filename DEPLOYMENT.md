@@ -54,7 +54,7 @@ bash setup.sh
 ```
 
 ### AI provider / model strategy (₹0 budget)
-- **Default: OpenCode free models** — `opencode/deepseek-v4.1-flash-free` (and others).
+- **Default: OpenCode free models** — `opencode/mimo-v2.6-flash-free` (and backups like `opencode/beam-free`, `opencode/flint-40b-free`, `opencode/deepseek-v4.1-flash-free`).
   These are hosted by OpenCode, require **no API key**, and cost **nothing**.
   Selected at runtime with `-m`, so the original `opencode.jsonc` (which names the
   paid `openai/gpt-5.4`) is left **untouched** — preserving architecture.

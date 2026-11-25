@@ -20,6 +20,6 @@
     }
   },
   "remoteEnv": {
-    "SAM_MODEL": "opencode/deepseek-v4.1-flash-free"
+    "SAM_MODEL": "opencode/mimo-v2.6-flash-free"
   }
 }

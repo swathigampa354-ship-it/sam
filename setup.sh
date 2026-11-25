@@ -25,9 +25,9 @@ for rc in "$HOME/.bashrc" "$HOME/.profile"; do
 done
 
 # 3. Default model (free, no API key, no cost). Override with SAM_MODEL env / .env.
-SAM_MODEL="${SAM_MODEL:-opencode/deepseek-v4.1-flash-free}"
+SAM_MODEL="${SAM_MODEL:-opencode/mimo-v2.6-flash-free}"
 echo "==> Default model: ${SAM_MODEL}"
-echo "    Other free options: opencode/nemotron-3.5-lightning-free, opencode/beam-free, opencode/hy4-flash-free"
+echo "    Other free options: opencode/beam-free, opencode/flint-40b-free, opencode/deepseek-v4.1-flash-free"
 
 # 4. Global OpenCode config
 mkdir -p "$HOME/.config/opencode"

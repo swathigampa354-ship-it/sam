@@ -10,7 +10,7 @@ set -euo pipefail
 export PATH="$HOME/.opencode/bin:$PATH"
 cd "$(dirname "$0")"
 
-SAM_MODEL="${SAM_MODEL:-opencode/deepseek-v4.1-flash-free}"
+SAM_MODEL="${SAM_MODEL:-opencode/mimo-v2.6-flash-free}"
 PORT="${SAM_PORT:-3000}"
 MODE="${1:-${SAM_MODE:-tui}}"
 
