@@ -1,11 +1,6 @@
 {
   "name": "SAM - AI Content Writing Agent",
-  "image": "mcr.microsoft.com/devcontainers/base:debian",
-  "features": {
-    "ghcr.io/devcontainers/features/node:1": { "version": "20" },
-    "ghcr.io/devcontainers/features/git:1": {},
-    "ghcr.io/devcontainers/features/github-cli:1": {}
-  },
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
   "postCreateCommand": "bash setup.sh",
   "forwardPorts": [3000],
   "portsAttributes": {
@@ -20,6 +15,6 @@
     }
   },
   "remoteEnv": {
-    "SAM_MODEL": "${localEnv:SAM_MODEL:-opencode/deepseek-v4.1-flash-free}"
+    "SAM_MODEL": "opencode/deepseek-v4.1-flash-free"
   }
 }

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # start.sh — Launch SAM (OpenCode) inside GitHub Codespaces.
 #
-#   ./start.sh            -> interactive TUI (free model via -m)
+#   ./start.sh            -> interactive TUI (free model)
 #   ./start.sh web        -> native OpenCode web UI on 0.0.0.0:$SAM_PORT (PRIVATE port)
 #   ./start.sh run "..."  -> one-shot headless content generation
 #
-# All modes default to a FREE OpenCode model (no API key, no cost).
+# All modes default to a verified FREE OpenCode model (no API key, no cost).
 set -euo pipefail
 export PATH="$HOME/.opencode/bin:$PATH"
 cd "$(dirname "$0")"
@@ -14,22 +14,27 @@ SAM_MODEL="${SAM_MODEL:-opencode/deepseek-v4.1-flash-free}"
 PORT="${SAM_PORT:-3000}"
 MODE="${1:-${SAM_MODE:-tui}}"
 
+# Override project model at runtime with the verified free model while preserving upstream opencode.jsonc
+export OPENCODE_CONFIG_CONTENT="{\"model\":\"${SAM_MODEL}\",\"default_agent\":\"seo-guide\"}"
+
 case "$MODE" in
   web)
-    # Secure the web UI. Keep the Codespaces forwarded port PRIVATE.
-    if [ -z "${OPENCODE_SERVER_PASSWORD:-}" ]; then
+    # In GitHub Codespaces, port 3000 is forwarded as PRIVATE (authenticated via your GitHub login).
+    # Outside Codespaces, auto-generate a server password unless one is already provided.
+    if [ -n "${OPENCODE_SERVER_PASSWORD:-}" ]; then
+      export OPENCODE_SERVER_PASSWORD
+    elif [ "${CODESPACES:-}" != "true" ]; then
       OPENCODE_SERVER_PASSWORD="$(openssl rand -hex 16 2>/dev/null || head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-      echo "Generated OPENCODE_SERVER_PASSWORD (save it if you need to reconnect): ${OPENCODE_SERVER_PASSWORD}"
+      export OPENCODE_SERVER_PASSWORD
+      echo "==> Generated local OPENCODE_SERVER_PASSWORD (set OPENCODE_SERVER_PASSWORD to customize)."
     fi
-    export OPENCODE_SERVER_PASSWORD
-    echo "==> Starting SAM web UI at 0.0.0.0:${PORT} (model picker shows free opencode/* models)"
-    echo "==> In Codespaces, forward port ${PORT} as PRIVATE and open the browser preview."
-    echo "==> In the UI, choose a free model such as: ${SAM_MODEL}"
+    echo "==> Starting SAM web UI on 0.0.0.0:${PORT} with default model: ${SAM_MODEL}"
+    echo "==> Codespaces port ${PORT} should be forwarded as PRIVATE."
     exec opencode web --hostname 0.0.0.0 --port "$PORT"
     ;;
   run)
     shift
-    echo "==> Running SAM (headless): $*"
+    echo "==> Running SAM (headless, model: ${SAM_MODEL}): $*"
     exec opencode run "$@" -m "$SAM_MODEL" --auto
     ;;
   tui|*)
