@@ -14,8 +14,13 @@ SAM_MODEL="${SAM_MODEL:-opencode/deepseek-v4.1-flash-free}"
 PORT="${SAM_PORT:-3000}"
 MODE="${1:-${SAM_MODE:-tui}}"
 
-# Override project model at runtime with the verified free model while preserving upstream opencode.jsonc
-export OPENCODE_CONFIG_CONTENT="{\"model\":\"${SAM_MODEL}\",\"default_agent\":\"seo-guide\"}"
+# Override project model with the verified free model while preserving upstream opencode.jsonc.
+# If EXA_API_KEY is not set, disable remote Exa MCP so OpenCode never blocks on interactive OAuth.
+if [ -n "${EXA_API_KEY:-}" ]; then
+  export OPENCODE_CONFIG_CONTENT="{\"model\":\"${SAM_MODEL}\",\"default_agent\":\"seo-guide\"}"
+else
+  export OPENCODE_CONFIG_CONTENT="{\"model\":\"${SAM_MODEL}\",\"default_agent\":\"seo-guide\",\"mcp\":{\"exa\":{\"type\":\"remote\",\"url\":\"https://mcp.exa.ai/mcp\",\"enabled\":false}}}"
+fi
 
 case "$MODE" in
   web)
@@ -35,7 +40,7 @@ case "$MODE" in
   run)
     shift
     echo "==> Running SAM (headless, model: ${SAM_MODEL}): $*"
-    exec opencode run "$@" -m "$SAM_MODEL" --auto
+    BROWSER="" exec opencode run "$@" -m "$SAM_MODEL" --auto
     ;;
   tui|*)
     echo "==> Launching SAM TUI (model: ${SAM_MODEL})"

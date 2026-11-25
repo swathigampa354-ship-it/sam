@@ -9,7 +9,7 @@ echo "==> SAM deployment setup starting ($(date -u))"
 export PATH="$HOME/.opencode/bin:$PATH"
 if ! command -v opencode >/dev/null 2>&1; then
   echo "==> Installing OpenCode CLI (latest compatible)..."
-  curl -fsSL https://opencode.ai/install | bash
+  curl -fsSL https://opencode.ai/install | bash </dev/null
 else
   echo "==> OpenCode already installed: $(opencode --version)"
 fi
@@ -27,8 +27,7 @@ SAM_MODEL="${SAM_MODEL:-opencode/deepseek-v4.1-flash-free}"
 echo "==> Default model: ${SAM_MODEL}"
 echo "    Other free options: opencode/nemotron-3.5-lightning-free, opencode/beam-free, opencode/hy4-flash-free"
 
-# 4. Optional global OpenCode config (theme + default). The project opencode.jsonc
-#    still controls `model`, so start.sh always passes -m to guarantee the free model.
+# 4. Global OpenCode config
 mkdir -p "$HOME/.config/opencode"
 cat > "$HOME/.config/opencode/opencode.jsonc" <<EOF
 {
@@ -37,9 +36,10 @@ cat > "$HOME/.config/opencode/opencode.jsonc" <<EOF
 }
 EOF
 
-# 5. Verify the SAM agents are recognized by OpenCode
-echo "==> Verifying OpenCode agents (SAM agents must appear)..."
-opencode agent list 2>&1 | sed -n '1,60p' || true
+# 5. Verify the SAM agents are recognized by OpenCode (disable unauthenticated remote MCP OAuth prompt during headless check)
+echo "==> Verifying OpenCode agents..."
+OPENCODE_CONFIG_CONTENT="{\"model\":\"${SAM_MODEL}\",\"mcp\":{\"exa\":{\"type\":\"remote\",\"url\":\"https://mcp.exa.ai/mcp\",\"enabled\":false}}}" \
+  BROWSER="" timeout 20 opencode agent list </dev/null 2>&1 | head -30 || true
 
 # 6. Verify Node (required by SAM's analyzer/normalize scripts)
 if command -v node >/dev/null 2>&1; then

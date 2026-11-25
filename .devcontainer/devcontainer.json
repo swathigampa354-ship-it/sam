@@ -1,6 +1,11 @@
 {
   "name": "SAM - AI Content Writing Agent",
-  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-20-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/sshd:1": {
+      "version": "latest"
+    }
+  },
   "postCreateCommand": "bash setup.sh",
   "forwardPorts": [3000],
   "portsAttributes": {
