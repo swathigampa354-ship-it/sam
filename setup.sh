@@ -9,7 +9,9 @@ echo "==> SAM deployment setup starting ($(date -u))"
 export PATH="$HOME/.opencode/bin:$PATH"
 if ! command -v opencode >/dev/null 2>&1; then
   echo "==> Installing OpenCode CLI (latest compatible)..."
-  curl -fsSL https://opencode.ai/install | bash </dev/null
+  curl -fsSL https://opencode.ai/install -o /tmp/opencode-install.sh
+  bash /tmp/opencode-install.sh </dev/null
+  rm -f /tmp/opencode-install.sh
 else
   echo "==> OpenCode already installed: $(opencode --version)"
 fi
