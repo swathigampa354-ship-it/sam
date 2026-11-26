@@ -322,11 +322,12 @@
       } catch (_) {}
     }
 
+    const DEFAULT_WORKER_URL = "https://sam-content-agent.uberfor361.workers.dev";
     let workspaceFiles = loadFiles();
     let stats = loadStats();
     let activeFile = "drafts/ai-content-workflows.md";
-    let workerEndpoint = "";
-    let tunnelEndpoint = "";
+    let workerEndpoint = DEFAULT_WORKER_URL;
+    let edgeNeuronsRemaining = null;
     let remoteSessionId = null;
     let chatHistory = [];
 
@@ -343,12 +344,13 @@
 
     function updateTelemetryUI(extraNote = "") {
       const cooldownLeft = Math.max(0, Math.ceil((46_000 - (Date.now() - stats.lastKeylessAt)) / 1000));
-      const cdLabel = workerEndpoint ? "Edge Active (No Cooldown)" : (cooldownLeft > 0 ? `Keyless Cooldown ${cooldownLeft}s` : "Ready");
+      const neuronTag = edgeNeuronsRemaining !== null ? ` · Edge Neurons left: ${Math.round(edgeNeuronsRemaining)}` : "";
+      const cdLabel = workerEndpoint ? `Cloudflare Edge Active${neuronTag}` : (cooldownLeft > 0 ? `Keyless Cooldown ${cooldownLeft}s` : "Ready");
       quotaInfo.textContent = `Cache: ${stats.cacheHits} hits · Today: ${stats.reqs} reqs · ${extraNote || cdLabel}`;
     }
     setInterval(() => updateTelemetryUI(), 1000);
 
-    async function probeUrl(url, timeoutMs = 2500) {
+    async function probeUrl(url, timeoutMs = 3500) {
       if (!url) return null;
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -364,40 +366,30 @@
     }
 
     async function discoverBackends() {
+      let candidateUrl = DEFAULT_WORKER_URL;
       try {
         const res = await fetch("./live-backend.json?t=" + Date.now(), { cache: "no-store" });
         if (res.ok) {
           const cfg = await res.json();
-          if (cfg.worker_url) {
-            const wCfg = await probeUrl(cfg.worker_url, 3000);
-            if (wCfg) {
-              workerEndpoint = cfg.worker_url.replace(/\/+$/, "");
-              statusDot.className = "dot ok";
-              statusText.textContent = "Online · 24/7 Cloudflare Edge";
-              modelLabel.textContent = wCfg.model || "@cf/openai/gpt-oss-120b";
-              providerInfo.textContent = "Provider: Cloudflare Workers AI (0ms cold start) + Fallback";
-              updateTelemetryUI();
-              return;
-            }
-          }
-          if (cfg.cloudflare_url) {
-            const tCfg = await probeUrl(cfg.cloudflare_url, 2500);
-            if (tCfg) {
-              tunnelEndpoint = cfg.cloudflare_url.replace(/\/+$/, "");
-              const nativeBtn = document.getElementById("openNativeBtn");
-              nativeBtn.href = tunnelEndpoint;
-              nativeBtn.classList.remove("hidden");
-              statusDot.className = "dot ok";
-              statusText.textContent = "Online · OpenCode Backend + Fallback";
-              modelLabel.textContent = tCfg.model || "opencode/mimo-v2.6-flash-free";
-              providerInfo.textContent = "Provider: OpenCode Free + Keyless Edge Fallback";
-              updateTelemetryUI();
-              return;
-            }
-          }
+          if (cfg.worker_url) candidateUrl = cfg.worker_url;
         }
       } catch (_) {}
 
+      const wCfg = await probeUrl(candidateUrl, 4000);
+      if (wCfg) {
+        workerEndpoint = candidateUrl.replace(/\/+$/, "");
+        if (typeof wCfg?.quota?.neuronsRemaining === "number") {
+          edgeNeuronsRemaining = wCfg.quota.neuronsRemaining;
+        }
+        statusDot.className = "dot ok";
+        statusText.textContent = "Online · 24/7 Cloudflare Edge";
+        modelLabel.textContent = wCfg.model || "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+        providerInfo.textContent = "Provider: Cloudflare Workers AI + KV Cache + Free Fallback";
+        updateTelemetryUI();
+        return;
+      }
+
+      workerEndpoint = "";
       statusDot.className = "dot ok";
       statusText.textContent = "Online · 24/7 Keyless Edge AI";
       modelLabel.textContent = "gpt-oss-20b";
@@ -500,7 +492,7 @@
       };
     }
 
-    async function callRemoteBackend(baseUrl, agent, prompt) {
+    async function callRemoteBackend(baseUrl, agent, prompt, onChunk) {
       if (!remoteSessionId) {
         const sRes = await fetch(baseUrl + "/session", {
           method: "POST",
@@ -511,23 +503,74 @@
         const sData = await sRes.json();
         remoteSessionId = sData.id;
       }
-      const res = await fetch(`${baseUrl}/session/${remoteSessionId}/message`, {
+      const activeFileContent = (workspaceFiles[activeFile] || "").slice(0, 1200);
+      const res = await fetch(`${baseUrl}/session/${remoteSessionId}/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agent, parts: [{ type: "text", text: prompt }] })
+        body: JSON.stringify({
+          agent,
+          stream: true,
+          activeFileContent,
+          parts: [{ type: "text", text: prompt }]
+        })
       });
       if (!res.ok) {
         const errJ = await res.json().catch(() => ({}));
         throw new Error(errJ.error || "Backend HTTP " + res.status);
       }
+      const ct = res.headers.get("Content-Type") || "";
+      let provider = res.headers.get("X-SAM-Provider") || "cloudflare-workers-ai";
+      let model = res.headers.get("X-SAM-Model") || "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+      let cache = res.headers.get("X-SAM-Cache") || "MISS";
+
+      if (ct.includes("text/event-stream") && res.body) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let full = "";
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const raw of lines) {
+            const line = raw.trim();
+            if (!line.startsWith("data: ")) continue;
+            const payload = line.slice(6).trim();
+            if (payload === "[DONE]") break;
+            try {
+              const j = JSON.parse(payload);
+              if (j.error) throw new Error(j.error);
+              if (j.delta) {
+                full += j.delta;
+                if (onChunk) onChunk(full);
+              }
+              if (j.done && j.info) {
+                provider = j.info.providerID || provider;
+                model = j.info.modelID || model;
+                if (typeof j.info.neuronsRemaining === "number") {
+                  edgeNeuronsRemaining = j.info.neuronsRemaining;
+                }
+                if (j.cache) cache = j.cache;
+              }
+            } catch (e) {
+              if (e.message && !e.message.includes("JSON")) throw e;
+            }
+          }
+        }
+        if (!full.trim()) throw new Error("Empty backend stream");
+        return { text: full.trim(), provider, model, cache };
+      }
+
       const data = await res.json();
       const text = (data.parts || []).filter(p => p.type === "text" && p.text).map(p => p.text.trim()).join("\n\n");
       if (!text) throw new Error("Empty backend reply");
       return {
         text,
-        provider: res.headers.get("X-SAM-Provider") || data?.info?.providerID || "edge-backend",
-        model: res.headers.get("X-SAM-Model") || data?.info?.modelID || "free-model",
-        cache: res.headers.get("X-SAM-Cache") || "MISS"
+        provider: data?.info?.providerID || provider,
+        model: data?.info?.modelID || model,
+        cache
       };
     }
 
@@ -630,17 +673,11 @@
 
         if (workerEndpoint) {
           try {
-            result = await callRemoteBackend(workerEndpoint, agent, prompt);
+            result = await callRemoteBackend(workerEndpoint, agent, prompt, (partial) => {
+              body.textContent = partial;
+            });
           } catch (err) {
             errors.push("Worker: " + err.message);
-          }
-        }
-
-        if (!result && tunnelEndpoint) {
-          try {
-            result = await callRemoteBackend(tunnelEndpoint, agent, prompt);
-          } catch (err) {
-            errors.push("Tunnel: " + err.message);
           }
         }
 
