@@ -213,6 +213,7 @@
 
   <script type="module">
     import { analyzeDraftContent } from "./lib/analyzers/report.mjs";
+    import { extractMetadata } from "./lib/analyzers/markdown.mjs";
     import { normalizeContent } from "./lib/analyzers/normalize.mjs";
 
     const STORAGE_FILES_KEY = "sam_workspace_files_v2";
@@ -404,6 +405,13 @@
       updateTelemetryUI();
     }
 
+    function syncKeywordFromFile(content) {
+      const meta = extractMetadata(content || "");
+      if (meta["Primary Keyword"]) {
+        kwInput.value = meta["Primary Keyword"];
+      }
+    }
+
     function refreshFileDropdown() {
       const paths = Object.keys(workspaceFiles).sort();
       fileSelect.innerHTML = paths
@@ -411,6 +419,7 @@
         .join("");
       if (!workspaceFiles[activeFile] && paths.length) activeFile = paths[0];
       draftEditor.value = workspaceFiles[activeFile] || "";
+      syncKeywordFromFile(draftEditor.value);
     }
 
     function renderAnalysis() {
@@ -703,6 +712,7 @@
       workspaceFiles[activeFile] = draftEditor.value;
       activeFile = fileSelect.value;
       draftEditor.value = workspaceFiles[activeFile] || "";
+      syncKeywordFromFile(draftEditor.value);
       saveFiles(workspaceFiles);
       renderAnalysis();
     });
