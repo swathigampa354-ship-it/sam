@@ -1,0 +1,27 @@
+name: Deploy SAM Cloudflare Worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "worker/**"
+      - "lib/analyzers/**"
+      - "wrangler.toml"
+      - ".github/workflows/deploy-worker.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Run SAM & Worker test suite
+        run: node --test tests/
+      - name: Deploy Worker via Wrangler
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx --yes wrangler@latest deploy

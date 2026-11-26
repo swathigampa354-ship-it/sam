@@ -1,0 +1,13 @@
+name = "sam-content-agent"
+main = "worker/index.mjs"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+[ai]
+binding = "AI"
+
+[vars]
+ALLOWED_ORIGIN = "https://swathigampa354-ship-it.github.io"
+DAILY_NEURON_BUDGET = "9500"
+RATE_LIMIT_RPM = "20"
+CACHE_TTL_SECONDS = "3600"

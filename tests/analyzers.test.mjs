@@ -66,3 +66,38 @@ test('normalization preserves em dashes and code block spacing', () => {
   assert.equal(normalized.changes.invisibleCharactersRemoved, 1);
   assert.equal(normalized.changes.blankLinesCollapsed, 1);
 });
+
+test('YAML frontmatter metadata and keyword fields are parsed alongside bold metadata', () => {
+  const yamlDraft = [
+    '---',
+    'meta_title: "AI Content Workflows for Lean Startups"',
+    'meta_description: "Build repeatable ai content workflows in hours."',
+    'primary_keyword: "ai content workflows"',
+    'secondary_keywords:',
+    '  - "content pipeline"',
+    '  - "startup seo"',
+    'url_slug: "ai-content-workflows"',
+    '---',
+    '',
+    '# AI Content Workflows for Lean Startups',
+    '',
+    'Lean teams rely on ai content workflows to ship consistently.',
+    '',
+    '## Narrow Briefs',
+    '',
+    'Start with real customer questions.',
+  ].join('\n');
+
+  const structure = analyzeStructure(yamlDraft);
+  assert.equal(structure.metadata['Meta Title'], 'AI Content Workflows for Lean Startups');
+  assert.equal(structure.metadata['URL Slug'], 'ai-content-workflows');
+  assert.equal(structure.metadata['Secondary Keywords'], 'content pipeline, startup seo');
+  assert.equal(structure.h1Count, 1);
+  assert.equal(structure.h2Count, 1);
+
+  const kw = analyzeKeyword(yamlDraft, 'ai content workflows');
+  assert.equal(kw.inMetaTitle, true);
+  assert.equal(kw.inMetaDescription, true);
+  assert.equal(kw.inTitle, true);
+  assert.equal(kw.inFirst100Words, true);
+});
