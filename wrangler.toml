@@ -1,4 +1,5 @@
 name = "sam-content-agent"
+account_id = "b57cdac4e24ae8cf32d5a48b0958019f"
 main = "worker/index.mjs"
 compatibility_date = "2026-11-01"
 workers_dev = true
@@ -6,8 +7,14 @@ workers_dev = true
 [ai]
 binding = "AI"
 
+[[kv_namespaces]]
+binding = "SAM_KV"
+id = "c582ed94d34c477681a36ae07713be2f"
+
 [vars]
 ALLOWED_ORIGIN = "https://swathigampa354-ship-it.github.io"
-DAILY_NEURON_BUDGET = "9500"
+HARD_DAILY_NEURON_LIMIT = "9000"
+HARD_DAILY_REQUEST_LIMIT = "90000"
+HARD_DAILY_KV_WRITE_LIMIT = "900"
 RATE_LIMIT_RPM = "20"
 CACHE_TTL_SECONDS = "3600"

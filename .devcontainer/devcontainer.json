@@ -1,26 +1,17 @@
 {
   "name": "SAM - AI Content Writing Agent",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:1-20-bookworm",
-  "features": {
-    "ghcr.io/devcontainers/features/sshd:1": {
-      "version": "latest"
-    }
-  },
   "postCreateCommand": "bash setup.sh",
-  "postStartCommand": "pgrep -f 'opencode web' >/dev/null || (nohup ./start.sh web </dev/null >/tmp/sam-web.log 2>&1 &)",
   "forwardPorts": [3000],
   "portsAttributes": {
     "3000": {
-      "label": "SAM Web UI (OpenCode)",
-      "visibility": "public"
+      "label": "SAM Local Dev Web UI",
+      "visibility": "private"
     }
   },
   "customizations": {
     "vscode": {
       "extensions": ["editorconfig.editorconfig"]
     }
-  },
-  "remoteEnv": {
-    "SAM_MODEL": "opencode/mimo-v2.6-flash-free"
   }
 }

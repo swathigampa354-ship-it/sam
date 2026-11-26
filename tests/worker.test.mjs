@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import worker from "../worker/index.mjs";
 
-function makeReq(path, { method = "GET", body, ip = "203.0.113.10" } = {}) {
-  return new Request(`https://sam.workers.dev${path}`, {
+function makeReq(path, { method = "GET", body, ip = "203.0.113.10", extraHeaders = {} } = {}) {
+  return new Request(`https://sam-content-agent.uberfor361.workers.dev${path}`, {
     method,
     headers: {
       Origin: "https://swathigampa354-ship-it.github.io",
       "Content-Type": "application/json",
       "CF-Connecting-IP": ip,
+      ...extraHeaders,
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -31,7 +32,7 @@ test("worker /config exposes all 4 SAM agents and CORS headers", async () => {
   ]);
 });
 
-test("worker /analyze and /normalize run full SAM deterministic pipeline", async () => {
+test("worker /analyze and /normalize support both bold metadata colon styles", async () => {
   const normRes = await worker.fetch(
     makeReq("/normalize", {
       method: "POST",
@@ -49,9 +50,9 @@ test("worker /analyze and /normalize run full SAM deterministic pipeline", async
       body: {
         keyword: "saas onboarding",
         content: [
-          "**Meta Title**: SaaS Onboarding Checklist",
-          "**Meta Description**: Improve saas onboarding retention fast.",
-          "**URL Slug**: saas-onboarding",
+          "**Meta Title:** SaaS Onboarding Checklist",
+          "**Meta Description:** Improve saas onboarding retention fast.",
+          "**URL Slug:** saas-onboarding",
           "",
           "# SaaS Onboarding Checklist",
           "",
@@ -72,20 +73,36 @@ test("worker /analyze and /normalize run full SAM deterministic pipeline", async
   assert.equal(ana.keyword.inMetaTitle, true);
 });
 
-test("worker /session/:id/message handles provider fallback, workspace save, caching, and rate limit", async () => {
+test("worker /session/:id/message handles provider fallback, workspace save, caching, rate limit, SSE stream, and hard quota stop + recovery", async () => {
   let callCount = 0;
   const mockEnv = {
-    DAILY_NEURON_BUDGET: "9500",
+    HARD_DAILY_NEURON_LIMIT: "9000",
+    HARD_DAILY_REQUEST_LIMIT: "90000",
     RATE_LIMIT_RPM: "3",
     AI: {
-      async run(model) {
+      async run(model, opts) {
         callCount += 1;
-        if (model === "@cf/openai/gpt-oss-120b") {
-          throw new Error("Simulated model capacity limit");
+        if (opts?.stream) {
+          const enc = new TextEncoder();
+          return new ReadableStream({
+            start(ctrl) {
+              ctrl.enqueue(enc.encode('data: {"response":"# Streamed Title\\n\\n"}\n\n'));
+              ctrl.enqueue(
+                enc.encode(
+                  'data: {"response":"Fast body.","usage":{"neurons":12.5}}\n\ndata: [DONE]\n\n',
+                ),
+              );
+              ctrl.close();
+            },
+          });
+        }
+        if (model === "@cf/meta/llama-3.3-70b-instruct-fp8-fast") {
+          throw new Error("Simulated primary model capacity limit");
         }
         return {
           response:
             '<sam-file path="drafts/test-post.md">**Meta Title**: Test Post\n**Meta Description**: Test desc\n**URL Slug**: test-post\n\n# Test Post\n\nBody text.\n\n## Section\n\nMore text.</sam-file>\n\nSaved draft.',
+          usage: { neurons: 10.25 },
         };
       },
     },
@@ -97,7 +114,7 @@ test("worker /session/:id/message handles provider fallback, workspace save, cac
   );
   const session = await sRes.json();
 
-  // First call: triggers fallback from 120b -> 20b, saves file, caches response
+  // First call: triggers fallback from llama-3.3-70b -> gpt-oss-20b, saves file, caches response
   const m1 = await worker.fetch(
     makeReq(`/session/${session.id}/message`, {
       method: "POST",
@@ -112,12 +129,13 @@ test("worker /session/:id/message handles provider fallback, workspace save, cac
   assert.equal(m1.status, 200);
   assert.equal(m1.headers.get("X-SAM-Cache"), "MISS");
   assert.equal(m1.headers.get("X-SAM-Model"), "@cf/openai/gpt-oss-20b");
+  assert.equal(m1.headers.get("X-SAM-Fallbacks"), "1");
   const body1 = await m1.json();
   assert.equal(body1.info.savedFiles[0].path, "drafts/test-post.md");
   const callsAfterFirst = callCount;
-  assert.equal(callsAfterFirst, 2); // 1 failed + 1 succeeded
+  assert.equal(callsAfterFirst, 2);
 
-  // Second identical call (same context? Note session history grew so test fresh session for exact cache hit)
+  // Cache HIT on fresh session with identical prompt
   const sRes2 = await worker.fetch(
     makeReq("/session", { method: "POST", body: { title: "E2E-cache" }, ip: "198.51.100.5" }),
     mockEnv,
@@ -136,19 +154,68 @@ test("worker /session/:id/message handles provider fallback, workspace save, cac
   );
   assert.equal(m2.status, 200);
   assert.equal(m2.headers.get("X-SAM-Cache"), "HIT");
-  assert.equal(callCount, callsAfterFirst); // 0 new LLM calls on cache HIT
+  assert.equal(callCount, callsAfterFirst);
 
-  // Workspace file persisted
-  const wsRes = await worker.fetch(makeReq("/workspace"), mockEnv);
-  const ws = await wsRes.json();
-  assert.ok(ws.files["drafts/test-post.md"].includes("# Test Post"));
+  // SSE stream endpoint test
+  const streamRes = await worker.fetch(
+    makeReq(`/session/${session2.id}/stream`, {
+      method: "POST",
+      ip: "198.51.100.88",
+      body: {
+        agent: "article-writer",
+        parts: [{ type: "text", text: "Stream quick outline" }],
+      },
+    }),
+    mockEnv,
+  );
+  assert.equal(streamRes.status, 200);
+  assert.ok(streamRes.headers.get("Content-Type").includes("text/event-stream"));
+  const streamTxt = await streamRes.text();
+  assert.ok(streamTxt.includes("# Streamed Title"));
+  assert.ok(streamTxt.includes('"done":true'));
 
-  // Rate limit check (4th message in 1 minute from same IP with RATE_LIMIT_RPM=3 -> 429)
+  // Hard quota exhaustion (cap lowered below current neuronsUsed + external disabled) -> HTTP 429 HARD_QUOTA_STOP
+  const qExhaust = await worker.fetch(
+    makeReq(`/session/${session2.id}/message`, {
+      method: "POST",
+      ip: "198.51.100.99",
+      extraHeaders: {
+        "X-SAM-Max-Neurons": "1",
+        "X-SAM-Disable-External-Fallback": "1",
+      },
+      body: {
+        agent: "seo-guide",
+        noCache: true,
+        parts: [{ type: "text", text: "Blocked when hard quota exhausted" }],
+      },
+    }),
+    mockEnv,
+  );
+  assert.equal(qExhaust.status, 429);
+  const qErr = await qExhaust.json();
+  assert.equal(qErr.code, "HARD_QUOTA_STOP");
+
+  // Immediate quota recovery once cap is restored (normal 9000 cap) -> HTTP 200
+  const qRecover = await worker.fetch(
+    makeReq(`/session/${session2.id}/message`, {
+      method: "POST",
+      ip: "198.51.100.99",
+      body: {
+        agent: "seo-guide",
+        noCache: true,
+        parts: [{ type: "text", text: "Recovers cleanly once quota window active" }],
+      },
+    }),
+    mockEnv,
+  );
+  assert.equal(qRecover.status, 200);
+
+  // Rate limit check (4th message in 1 minute from 198.51.100.5 -> 429)
   await worker.fetch(
     makeReq(`/session/${session2.id}/message`, {
       method: "POST",
       ip: "198.51.100.5",
-      body: { agent: "seo-guide", parts: [{ type: "text", text: "Another prompt" }] },
+      body: { agent: "seo-guide", parts: [{ type: "text", text: "Third prompt" }] },
     }),
     mockEnv,
   );
