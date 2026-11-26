@@ -1,0 +1,9 @@
+{
+  "worker_url": "",
+  "cloudflare_url": "",
+  "codespace_port_url": "https://sam-content-agent-qv7jp49pw4xj3w7r-3000.app.github.dev",
+  "codespace_editor_url": "https://sam-content-agent-qv7jp49pw4xj3w7r.github.dev",
+  "model": "gpt-oss-20b",
+  "agent": "seo-guide",
+  "updated_at": "2026-11-26T04:40:00Z"
+}
